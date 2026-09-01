@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NewAPI 风控网关</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div id="login" class="login-shell">
+    <form id="login-form" class="panel login-card">
+      <div class="brand-mark">RG</div>
+      <h1>NewAPI 风控网关</h1>
+      <p>请输入部署时设置的 ADMIN_TOKEN。Token 只保存在当前浏览器会话。</p>
+      <label>管理员 Token<input id="login-token" type="password" autocomplete="current-password" required></label>
+      <button type="submit">进入控制台</button>
+      <div id="login-error" class="error"></div>
+    </form>
+  </div>
+
+  <div id="app" class="app hidden">
+    <aside>
+      <div class="brand"><span class="brand-mark small">RG</span><div><strong>Risk Gateway</strong><small>NewAPI 风控层</small></div></div>
+      <nav>
+        <button data-view="dashboard" class="active">概览</button>
+        <button data-view="requests">请求追踪</button>
+        <button data-view="routes">渠道路由</button>
+        <button data-view="settings">审计与存储</button>
+        <button data-view="audit">审计测试</button>
+      </nav>
+      <div class="aside-footer"><button id="logout" class="ghost">退出</button></div>
+    </aside>
+    <main>
+      <header><div><h2 id="page-title">概览</h2><p id="page-subtitle">近 24 小时风控与链路状态</p></div><span id="api-state" class="badge">检查中</span></header>
+      <div id="notice" class="notice hidden"></div>
+
+      <section id="view-dashboard" class="view active">
+        <div id="stats" class="cards"></div>
+        <div class="grid two">
+          <div class="panel"><div class="panel-title">存储状态</div><div id="storage-health"></div></div>
+          <div class="panel"><div class="panel-title">热门模型</div><div id="top-models"></div></div>
+        </div>
+        <div class="panel"><div class="panel-title">最近请求</div><div class="table-wrap"><table><thead><tr><th>时间</th><th>请求 ID</th><th>路由</th><th>模型</th><th>审计</th><th>状态</th><th>耗时</th></tr></thead><tbody id="recent-requests"></tbody></table></div></div>
+      </section>
+
+      <section id="view-requests" class="view">
+        <div class="panel">
+          <form id="request-filter" class="filters">
+            <label>请求/Trace ID<input name="request_id"></label><label>路由<input name="route"></label><label>模型<input name="model"></label>
+            <label>审计<select name="decision"><option value="">全部</option><option>allow</option><option>review</option><option>block</option></select></label>
+            <label>HTTP 状态<input name="status" type="number"></label><button type="submit">查询</button>
+          </form>
+          <div class="table-wrap"><table><thead><tr><th>时间</th><th>请求</th><th>路由 / 模型</th><th>用户哈希</th><th>审计</th><th>HTTP / 上游</th><th>Token</th><th>耗时</th></tr></thead><tbody id="request-list"></tbody></table></div>
+        </div>
+      </section>
+
+      <section id="view-routes" class="view">
+        <div class="grid route-layout">
+          <div class="panel"><div class="panel-title">渠道列表 <button id="new-route" class="small-button">新建</button></div><div id="route-list" class="route-list"></div></div>
+          <form id="route-form" class="panel form-grid">
+            <div class="panel-title">路由配置</div>
+            <label>路由 Key<input name="key" required placeholder="openai-us"></label><label>显示名称<input name="name" required></label>
+            <label class="span-2">渠道 Base URL<input name="base_url" required placeholder="https://api.openai.com"></label>
+            <label>鉴权方式<select name="auth_mode"><option value="passthrough">透传 NewAPI Authorization</option><option value="managed">网关托管 Key</option><option value="none">不转发 Authorization</option></select></label>
+            <label>托管密钥<input name="managed_secret" type="password" placeholder="留空表示保持原值"></label>
+            <label>超时（毫秒）<input name="timeout_ms" type="number" value="600000"></label><label>启用<select name="enabled"><option value="true">是</option><option value="false">否</option></select></label>
+            <label>归一化渠道错误<select name="normalize_errors"><option value="true">是</option><option value="false">否</option></select></label><label>允许私网渠道<select name="allow_private_target"><option value="false">否</option><option value="true">是</option></select></label>
+            <label class="span-2">附加请求头（JSON）<textarea name="headers">{}</textarea></label>
+            <label class="span-2">模型映射（JSON）<textarea name="model_map">{}</textarea></label>
+            <label class="span-2">归一化 HTTP 状态（逗号）<input name="normalize_statuses" placeholder="401,403,408,409,429,500,502,503,504"></label>
+            <label class="span-2">错误文本模式（每行一个）<textarea name="normalize_patterns"></textarea></label>
+            <div class="actions span-2"><button type="submit">保存路由</button><button type="button" id="delete-route" class="danger">删除</button></div>
+          </form>
+        </div>
+      </section>
+
+      <section id="view-settings" class="view">
+        <form id="settings-form" class="panel form-grid">
+          <div class="panel-title span-2">审计模型</div>
+          <label>启用小模型审计<select name="model_audit_enabled"><option value="true">是</option><option value="false">否</option></select></label>
+          <label>模型名<input name="audit_model_name" placeholder="qwen3.5:4b"></label>
+          <label class="span-2">OpenAI 兼容审计地址<input name="audit_model_url" placeholder="http://ollama:11434/v1/chat/completions"></label>
+          <label>模型 API Key<input name="audit_model_api_key" type="password" placeholder="留空表示保持原值"></label><label>审计超时（毫秒）<input name="audit_timeout_ms" type="number"></label>
+          <label>阻断阈值<input name="block_threshold" type="number" min="0" max="1" step="0.01"></label><label>复核阈值<input name="review_threshold" type="number" min="0" max="1" step="0.01"></label>
+          <label>模型故障策略<select name="audit_fail_mode"><option value="rules_only">退回确定性规则</option><option value="block">失败关闭（阻断）</option><option value="allow">失败开放（放行）</option></select></label><label>Payload 保存模式<select name="payload_mode"><option value="none">不保存正文</option><option value="redacted">脱敏保存</option><option value="encrypted">AES-GCM 加密保存</option></select></label>
+          <div class="panel-title span-2">限流与存储</div>
+          <label>启用分布式限流<select name="rate_limit_enabled"><option value="true">是</option><option value="false">否</option></select></label><label>每主体 RPS<input name="rate_limit_rps" type="number"></label>
+          <label>突发容量<input name="rate_limit_burst" type="number"></label><label>PG 热数据保留天数<input name="hot_retention_days" type="number"></label>
+          <label>Kafka 保留天数<input name="kafka_retention_days" type="number" min="-1"><small>-1 表示永久保留</small></label><label>最大请求正文（字节）<input name="max_request_body_bytes" type="number"></label>
+          <label>最大非流式响应（字节）<input name="max_response_bytes" type="number"></label><label>默认归一化状态（逗号）<input name="normalize_statuses"></label>
+          <label class="span-2">默认错误文本模式（每行一个）<textarea name="normalize_patterns"></textarea></label>
+          <div class="actions span-2"><button type="submit">保存并应用</button><button type="button" id="refresh-storage" class="secondary">刷新存储状态</button></div>
+          <pre id="settings-result" class="span-2 result"></pre>
+        </form>
+      </section>
+
+      <section id="view-audit" class="view">
+        <div class="grid two"><form id="audit-form" class="panel"><div class="panel-title">Cyber 审计测试</div><label>待审计文本<textarea name="text" class="large" required placeholder="输入真实或测试请求；不会转发至业务渠道"></textarea></label><button type="submit">执行审计</button></form><div class="panel"><div class="panel-title">结果</div><pre id="audit-result" class="result">尚未测试</pre></div></div>
+      </section>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

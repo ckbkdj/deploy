@@ -1,0 +1,229 @@
+replicaCount: 3
+
+image:
+  repository: ghcr.io/ckbkdj/newapi-risk-gateway
+  pullPolicy: IfNotPresent
+  tag: "0.1.0"
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: false
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 10001
+
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+
+containerPort: 8080
+terminationGracePeriodSeconds: 45
+
+config:
+  APP_ENV: production
+  LISTEN_ADDR: ":8080"
+  PUBLIC_BASE_URL: "https://risk.example.com"
+  LOG_LEVEL: info
+  DATABASE_MAX_CONNS: "80"
+  DATABASE_MIN_CONNS: "8"
+  REDIS_REQUIRED: "true"
+  REDIS_POOL_SIZE: "256"
+  REDIS_MIN_IDLE_CONNS: "16"
+  KAFKA_ENABLED: "true"
+  KAFKA_REQUIRED: "true"
+  KAFKA_CLIENT_ID: newapi-risk-gateway
+  KAFKA_AUDIT_TOPIC: risk.audit.events
+  KAFKA_TRACE_TOPIC: risk.request.traces
+  KAFKA_DEADLETTER_TOPIC: risk.deadletter
+  KAFKA_AUTO_CREATE_TOPICS: "false"
+  KAFKA_TOPIC_PARTITIONS: "24"
+  KAFKA_REPLICATION_FACTOR: "3"
+  KAFKA_RETENTION_DAYS: "365"
+  KAFKA_SASL_MECHANISM: SCRAM-SHA-512
+  KAFKA_TLS_ENABLED: "true"
+  KAFKA_TLS_INSECURE_SKIP_VERIFY: "false"
+  KAFKA_CA_CERT_FILE: /run/secrets/kafka/ca.pem
+  KAFKA_CLIENT_CERT_FILE: ""
+  KAFKA_CLIENT_KEY_FILE: ""
+  RISK_HTTP_STATUS: "555"
+  DEFAULT_ROUTE_KEY: default
+  DEFAULT_ROUTE_NAME: Default upstream
+  DEFAULT_UPSTREAM_BASE_URL: ""
+  DEFAULT_UPSTREAM_AUTH_MODE: passthrough
+  ALLOW_PRIVATE_UPSTREAMS: "false"
+  TRUST_PROXY_HEADERS: "true"
+  AUDIT_MODEL_ENABLED: "true"
+  AUDIT_MODEL_URL: "http://audit-model.risk-system.svc:11434/v1/chat/completions"
+  AUDIT_MODEL_NAME: security-auditor-small
+  AUDIT_MODEL_MAX_CONCURRENCY: "128"
+  AUDIT_TIMEOUT: 1200ms
+  AUDIT_FAIL_MODE: rules_only
+  AUDIT_QUEUE_SIZE: "100000"
+  AUDIT_WORKERS: "32"
+  HOT_RETENTION_DAYS: "7"
+  PAYLOAD_MODE: redacted
+  PAYLOAD_CAPTURE_BYTES: "65536"
+  MAX_REQUEST_BODY_BYTES: "8388608"
+  MAX_RESPONSE_BYTES: "33554432"
+  RATE_LIMIT_ENABLED: "true"
+  RATE_LIMIT_RPS: "250"
+  RATE_LIMIT_BURST: "500"
+  NORMALIZE_UPSTREAM_STATUSES: "401,403,408,409,429,500,502,503,504"
+  NORMALIZE_UPSTREAM_PATTERNS: "model not found,unsupported model,model overloaded,insufficient capacity,upstream timeout,provider error,channel error,模型不存在,模型过载,渠道错误"
+  CLIENT_READ_TIMEOUT: 60s
+  CLIENT_IDLE_TIMEOUT: 120s
+  MAX_HEADER_BYTES: "1048576"
+  REQUEST_TIMEOUT: 30m
+  SHUTDOWN_TIMEOUT: 30s
+  CLEANUP_INTERVAL: 1h
+  SETTINGS_REFRESH_INTERVAL: 30s
+  UPSTREAM_MAX_IDLE_CONNS: "8192"
+  UPSTREAM_MAX_IDLE_CONNS_PER_HOST: "2048"
+  UPSTREAM_MAX_CONNS_PER_HOST: "0"
+
+secret:
+  # Set existingSecret to a Secret containing every key below, or let the chart
+  # create one from data. Never store real values in a committed values file.
+  existingSecret: ""
+  create: true
+  data:
+    DATABASE_URL: ""
+    REDIS_URL: ""
+    KAFKA_BROKERS: ""
+    KAFKA_USERNAME: ""
+    KAFKA_PASSWORD: ""
+    ADMIN_TOKEN: ""
+    TRACKING_TOKEN: ""
+    HASH_SECRET: ""
+    MASTER_KEY: ""
+    AUDIT_MODEL_API_KEY: ""
+
+kafkaTLS:
+  existingSecret: ""
+  # Created only when existingSecret is empty and ca/client data is supplied.
+  caPem: ""
+  clientCertPem: ""
+  clientKeyPem: ""
+
+extraEnv: []
+extraEnvFrom: []
+extraVolumes: []
+extraVolumeMounts: []
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+probes:
+  liveness:
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  startup:
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 60
+
+rollingUpdate:
+  maxUnavailable: 0
+  maxSurge: 1
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+horizontalPodAutoscaler:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 65
+  targetMemoryUtilizationPercentage: 75
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+        - type: Pods
+          value: 4
+          periodSeconds: 60
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 60
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  hosts:
+    - host: risk.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+networkPolicy:
+  enabled: false
+  ingressFrom: []
+  # Egress is environment-specific because providers and managed services vary.
+  # Keep disabled until explicit CIDRs/namespaces are configured externally.
+
+serviceMonitor:
+  enabled: false
+  namespace: ""
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector: {}
+
+priorityClassName: ""
+revisionHistoryLimit: 5

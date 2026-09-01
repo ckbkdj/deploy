@@ -1,0 +1,236 @@
+openapi: 3.1.0
+info:
+  title: NewAPI Risk Gateway Management API
+  version: 0.1.0
+  description: 管理、追踪和健康接口。代理接口为 OpenAI 兼容透传，未在此枚举全部供应商 schema。
+servers:
+  - url: https://risk.example.com
+paths:
+  /healthz:
+    get:
+      summary: Liveness
+      responses:
+        '200': {description: Process is alive}
+  /readyz:
+    get:
+      summary: Readiness
+      responses:
+        '200': {description: Required dependencies are ready}
+        '503': {description: A required dependency is unavailable}
+  /api/v1/track:
+    post:
+      summary: NewAPI 主动上报请求追踪
+      security: [{trackingBearer: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TrackEvent'}
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted: {type: boolean}
+                  request_id: {type: string}
+                  trace_id: {type: string}
+        '400': {description: Invalid event}
+        '401': {description: Unauthorized}
+  /api/v1/track/{requestId}:
+    get:
+      summary: 查询主动追踪最新记录
+      security: [{adminBearer: []}]
+      parameters:
+        - in: path
+          name: requestId
+          required: true
+          schema: {type: string, maxLength: 96}
+      responses:
+        '200': {description: Tracking record}
+        '404': {description: Not found}
+  /api/admin/v1/dashboard:
+    get:
+      summary: Dashboard statistics
+      security: [{adminBearer: []}]
+      responses:
+        '200': {description: Dashboard data}
+  /api/admin/v1/routes:
+    get:
+      summary: List routes
+      security: [{adminBearer: []}]
+      responses:
+        '200': {description: Routes}
+    post:
+      summary: Create or upsert route
+      security: [{adminBearer: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Route'}
+      responses:
+        '200': {description: Saved route}
+        '400': {description: Invalid route}
+  /api/admin/v1/routes/{routeKey}:
+    put:
+      summary: Update route
+      security: [{adminBearer: []}]
+      parameters:
+        - in: path
+          name: routeKey
+          required: true
+          schema: {type: string, maxLength: 64}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Route'}
+      responses:
+        '200': {description: Saved route}
+    delete:
+      summary: Delete route
+      security: [{adminBearer: []}]
+      parameters:
+        - in: path
+          name: routeKey
+          required: true
+          schema: {type: string, maxLength: 64}
+      responses:
+        '204': {description: Deleted}
+  /api/admin/v1/settings:
+    get:
+      summary: Get runtime settings
+      security: [{adminBearer: []}]
+      responses:
+        '200': {description: Settings}
+    put:
+      summary: Update runtime settings
+      security: [{adminBearer: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RuntimeSettings'}
+      responses:
+        '200': {description: Saved settings and Kafka retention result}
+        '400': {description: Invalid settings}
+  /api/admin/v1/requests:
+    get:
+      summary: Query hot request traces
+      security: [{adminBearer: []}]
+      parameters:
+        - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 500}}
+        - {in: query, name: route, schema: {type: string}}
+        - {in: query, name: model, schema: {type: string}}
+        - {in: query, name: decision, schema: {type: string, enum: [allow, review, block]}}
+        - {in: query, name: status, schema: {type: integer, minimum: 100, maximum: 599}}
+        - {in: query, name: request_id, schema: {type: string}}
+      responses:
+        '200': {description: Request traces}
+  /api/admin/v1/audit/test:
+    post:
+      summary: Test rules and configured audit model
+      security: [{adminBearer: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: {type: string}
+      responses:
+        '200': {description: Audit result}
+  /api/admin/v1/storage/status:
+    get:
+      summary: Dependency status
+      security: [{adminBearer: []}]
+      responses:
+        '200': {description: PostgreSQL Redis Kafka status}
+  /api/admin/v1/kafka/retention/apply:
+    post:
+      summary: Apply retention.ms to managed topics
+      security: [{adminBearer: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [days]
+              properties:
+                days: {type: integer, minimum: -1, maximum: 36500}
+      responses:
+        '200': {description: Applied}
+        '502': {description: Kafka admin operation failed}
+components:
+  securitySchemes:
+    adminBearer:
+      type: http
+      scheme: bearer
+    trackingBearer:
+      type: http
+      scheme: bearer
+  schemas:
+    TrackEvent:
+      type: object
+      properties:
+        request_id: {type: string, maxLength: 96}
+        trace_id: {type: string, maxLength: 96}
+        event: {type: string, enum: [start, finish, error, usage], default: finish}
+        user_id: {type: string, maxLength: 512}
+        token_id: {type: string, maxLength: 512}
+        channel_id: {type: string, maxLength: 128}
+        route_key: {type: string, maxLength: 64}
+        model: {type: string, maxLength: 192}
+        http_status: {type: integer}
+        upstream_status: {type: integer}
+        latency_ms: {type: integer, minimum: 0}
+        prompt_tokens: {type: integer, minimum: 0}
+        completion_tokens: {type: integer, minimum: 0}
+        total_tokens: {type: integer, minimum: 0}
+        error_code: {type: string, maxLength: 96}
+        metadata: {type: object, additionalProperties: true}
+        occurred_at: {type: string, format: date-time}
+    Route:
+      type: object
+      required: [key, base_url]
+      properties:
+        key: {type: string, pattern: '^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$'}
+        name: {type: string, maxLength: 160}
+        base_url: {type: string, format: uri, maxLength: 2048}
+        auth_mode: {type: string, enum: [passthrough, managed, none]}
+        managed_secret: {type: string, writeOnly: true}
+        headers: {type: object, additionalProperties: {type: string}}
+        model_map: {type: object, additionalProperties: {type: string}}
+        enabled: {type: boolean}
+        timeout_ms: {type: integer, minimum: 100, maximum: 86400000}
+        normalize_errors: {type: boolean}
+        normalize_statuses: {type: array, items: {type: integer, minimum: 100, maximum: 599}}
+        normalize_patterns: {type: array, items: {type: string, maxLength: 512}}
+        allow_private_target: {type: boolean}
+    RuntimeSettings:
+      type: object
+      properties:
+        hot_retention_days: {type: integer, minimum: 1, maximum: 3650}
+        kafka_retention_days: {type: integer, minimum: -1, maximum: 36500}
+        payload_mode: {type: string, enum: [none, redacted, encrypted]}
+        model_audit_enabled: {type: boolean}
+        audit_model_url: {type: string, format: uri}
+        audit_model_name: {type: string}
+        audit_model_api_key: {type: string, writeOnly: true}
+        audit_timeout_ms: {type: integer}
+        block_threshold: {type: number, minimum: 0, maximum: 1}
+        review_threshold: {type: number, minimum: 0, maximum: 1}
+        audit_fail_mode: {type: string, enum: [rules_only, allow, block]}
+        rate_limit_enabled: {type: boolean}
+        rate_limit_rps: {type: integer, minimum: 1}
+        rate_limit_burst: {type: integer, minimum: 1}
+        normalize_statuses: {type: array, items: {type: integer}}
+        normalize_patterns: {type: array, items: {type: string}}
+        max_request_body_bytes: {type: integer}
+        max_response_bytes: {type: integer}

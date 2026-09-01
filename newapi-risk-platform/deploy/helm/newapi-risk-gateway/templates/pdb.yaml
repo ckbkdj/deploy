@@ -1,0 +1,13 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "newapi-risk-gateway.fullname" . }}
+  labels:
+    {{- include "newapi-risk-gateway.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "newapi-risk-gateway.selectorLabels" . | nindent 6 }}
+{{- end }}

@@ -1,0 +1,48 @@
+name: newapi-risk-observability
+services:
+  prometheus:
+    image: prom/prometheus:v3.11.2
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml","--storage.tsdb.retention.time=30d"]
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    networks: [risk]
+
+  grafana:
+    image: grafana/grafana:13.2.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
+    depends_on: [prometheus]
+    networks: [risk]
+
+  kafka-ui:
+    image: ghcr.io/kafbat/kafka-ui:v1.5.0
+    restart: unless-stopped
+    environment:
+      DYNAMIC_CONFIG_ENABLED: "false"
+      KAFKA_CLUSTERS_0_NAME: local-risk-kafka
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:19092
+      KAFKA_CLUSTERS_0_READONLY: "true"
+    ports:
+      - "127.0.0.1:${KAFKA_UI_PORT:-8089}:8080"
+    networks: [risk]
+
+networks:
+  risk:
+    name: newapi-risk-platform_risk
+    external: true
+volumes:
+  prometheus_data:
+  grafana_data:

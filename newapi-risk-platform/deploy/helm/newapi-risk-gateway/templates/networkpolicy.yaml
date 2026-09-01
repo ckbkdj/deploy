@@ -1,0 +1,19 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "newapi-risk-gateway.fullname" . }}
+  labels:
+    {{- include "newapi-risk-gateway.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "newapi-risk-gateway.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- toYaml .Values.networkPolicy.ingressFrom | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.containerPort }}
+{{- end }}

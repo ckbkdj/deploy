@@ -1,0 +1,124 @@
+name: newapi-risk-test
+services:
+  postgres:
+    image: postgres:17.11-alpine
+    environment:
+      POSTGRES_DB: risk
+      POSTGRES_USER: risk
+      POSTGRES_PASSWORD: test-postgres-password-0123456789
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U risk -d risk"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    networks: [risk-test]
+
+  redis:
+    image: redis:8.8.2-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--requirepass", "test-redis-password-0123456789"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a 'test-redis-password-0123456789' ping | grep PONG"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    networks: [risk-test]
+
+  kafka:
+    image: apache/kafka:4.3.1
+    hostname: kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:19092
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_LISTENERS: CONTROLLER://:29093,PLAINTEXT://:19092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: 1
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+    tmpfs:
+      - /tmp/kraft-combined-logs
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:19092 --list >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 15s
+    networks: [risk-test]
+
+  mock-upstream:
+    build:
+      context: .
+      args: {VERSION: test, COMMIT: test}
+    image: newapi-risk-gateway:test
+    entrypoint: ["/usr/local/bin/mock-upstream"]
+    environment:
+      MOCK_LISTEN_ADDR: :18081
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:18081/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [risk-test]
+
+  gateway:
+    image: newapi-risk-gateway:test
+    environment:
+      APP_ENV: production
+      LISTEN_ADDR: :8080
+      PUBLIC_BASE_URL: http://localhost:${TEST_GATEWAY_PORT:-18088}
+      DATABASE_URL: postgres://risk:test-postgres-password-0123456789@postgres:5432/risk?sslmode=disable
+      DATABASE_MAX_CONNS: 20
+      DATABASE_MIN_CONNS: 2
+      REDIS_URL: redis://:test-redis-password-0123456789@redis:6379/0
+      REDIS_REQUIRED: "true"
+      KAFKA_ENABLED: "true"
+      KAFKA_REQUIRED: "true"
+      KAFKA_BROKERS: kafka:19092
+      KAFKA_TOPIC_PARTITIONS: 3
+      KAFKA_REPLICATION_FACTOR: 1
+      KAFKA_RETENTION_DAYS: 1
+      ADMIN_TOKEN: test-admin-token-012345678901234567890
+      TRACKING_TOKEN: test-tracking-token-01234567890123456
+      HASH_SECRET: test-hash-secret-012345678901234567890
+      MASTER_KEY: test-master-key-012345678901234567890
+      DEFAULT_ROUTE_KEY: default
+      DEFAULT_ROUTE_NAME: Mock upstream
+      DEFAULT_UPSTREAM_BASE_URL: http://mock-upstream:18081
+      DEFAULT_UPSTREAM_AUTH_MODE: passthrough
+      ALLOW_PRIVATE_UPSTREAMS: "true"
+      AUDIT_MODEL_ENABLED: "false"
+      AUDIT_FAIL_MODE: rules_only
+      HOT_RETENTION_DAYS: 7
+      PAYLOAD_MODE: redacted
+      RATE_LIMIT_ENABLED: "true"
+      RATE_LIMIT_RPS: 1000
+      RATE_LIMIT_BURST: 2000
+      AUDIT_QUEUE_SIZE: 1000
+      AUDIT_WORKERS: 4
+    ports:
+      - "127.0.0.1:${TEST_GATEWAY_PORT:-18088}:8080"
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+      mock-upstream: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/readyz"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    networks: [risk-test]
+
+networks:
+  risk-test:
+    driver: bridge

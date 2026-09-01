@@ -1,0 +1,29 @@
+name: newapi-risk-gateway
+services:
+  gateway:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-remote}
+        COMMIT: ${COMMIT:-unknown}
+    image: ${GATEWAY_IMAGE:-newapi-risk-gateway:${VERSION:-remote}}
+    restart: unless-stopped
+    env_file: .env.remote
+    environment:
+      LISTEN_ADDR: :8080
+    ports:
+      - "${GATEWAY_BIND:-0.0.0.0}:${GATEWAY_PORT:-8088}:8080"
+    volumes:
+      - ${KAFKA_SECRETS_DIR:-./secrets/kafka}:/run/secrets/kafka:ro
+    healthcheck:
+      test: ["CMD","curl","-fsS","http://localhost:8080/readyz"]
+      interval: 10s
+      timeout: 4s
+      retries: 30
+    stop_grace_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: ${GATEWAY_MEMORY_LIMIT:-2G}
+        reservations:
+          memory: ${GATEWAY_MEMORY_RESERVATION:-256M}

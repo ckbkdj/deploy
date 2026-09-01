@@ -1,0 +1,135 @@
+name: newapi-risk-platform
+services:
+  postgres:
+    image: postgres:17.11-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-risk}
+      POSTGRES_USER: ${POSTGRES_USER:-risk}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    command: ["postgres","-c","max_connections=300","-c","shared_buffers=256MB","-c","wal_compression=on"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U ${POSTGRES_USER:-risk} -d ${POSTGRES_DB:-risk}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks: [risk]
+
+  redis:
+    image: redis:8.8.2-alpine
+    restart: unless-stopped
+    command: ["redis-server","--appendonly","yes","--appendfsync","everysec","--requirepass","${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL","redis-cli -a \"${REDIS_PASSWORD}\" ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks: [risk]
+
+  kafka:
+    image: apache/kafka:4.3.1
+    hostname: kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_HOST://localhost:${KAFKA_HOST_PORT:-9092},PLAINTEXT://kafka:19092
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_LISTENERS: CONTROLLER://:29093,PLAINTEXT_HOST://:9092,PLAINTEXT://:19092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: 1
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_NUM_PARTITIONS: ${KAFKA_TOPIC_PARTITIONS:-12}
+      KAFKA_LOG_RETENTION_HOURS: ${KAFKA_LOG_RETENTION_HOURS:-4320}
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    ports:
+      - "127.0.0.1:${KAFKA_HOST_PORT:-9092}:9092"
+    healthcheck:
+      test: ["CMD-SHELL","/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:19092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 8s
+      retries: 30
+      start_period: 20s
+    networks: [risk]
+
+  ollama:
+    image: ollama/ollama:0.33.2
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
+    healthcheck:
+      test: ["CMD","ollama","list"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+    networks: [risk]
+
+  ollama-pull:
+    image: ollama/ollama:0.33.2
+    restart: "no"
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh","-c"]
+    command: ["until ollama list >/dev/null 2>&1; do sleep 2; done; ollama pull ${AUDIT_MODEL_NAME:-qwen3.5:4b}"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    networks: [risk]
+
+  gateway:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-local}
+        COMMIT: ${COMMIT:-local}
+    image: newapi-risk-gateway:${VERSION:-local}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      LISTEN_ADDR: :8080
+      DATABASE_URL: postgres://${POSTGRES_USER:-risk}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-risk}?sslmode=disable
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      KAFKA_BROKERS: kafka:19092
+      AUDIT_MODEL_URL: http://ollama:11434/v1/chat/completions
+    ports:
+      - "${GATEWAY_PORT:-8088}:8080"
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      kafka: {condition: service_healthy}
+      ollama-pull: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD","curl","-fsS","http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+    stop_grace_period: 35s
+    networks: [risk]
+
+networks:
+  risk:
+    driver: bridge
+volumes:
+  postgres_data:
+  redis_data:
+  kafka_data:
+  ollama_data:

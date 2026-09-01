@@ -1,0 +1,12 @@
+apiVersion: v2
+name: newapi-risk-gateway
+description: High-availability NewAPI channel risk-control gateway
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.27.0-0"
+home: https://github.com/ckbkdj/deploy
+sources:
+  - https://github.com/ckbkdj/deploy
+maintainers:
+  - name: ckbkdj

@@ -1,0 +1,39 @@
+image:
+  repository: registry.example.com/platform/newapi-risk-gateway
+  tag: "0.1.0"
+
+config:
+  PUBLIC_BASE_URL: https://risk.example.com
+  DEFAULT_UPSTREAM_BASE_URL: https://provider.example.com
+  AUDIT_MODEL_URL: https://audit-model.internal/v1/chat/completions
+  AUDIT_MODEL_NAME: security-auditor-small
+  KAFKA_AUTO_CREATE_TOPICS: "false"
+  KAFKA_TOPIC_PARTITIONS: "24"
+  KAFKA_REPLICATION_FACTOR: "3"
+  KAFKA_RETENTION_DAYS: "365"
+
+# Recommended: create this Secret through Vault/External Secrets, then reference it.
+secret:
+  existingSecret: newapi-risk-gateway-secrets
+  create: false
+
+# Secret keys expected in newapi-risk-gateway-secrets:
+# DATABASE_URL, REDIS_URL, KAFKA_BROKERS, KAFKA_USERNAME, KAFKA_PASSWORD,
+# ADMIN_TOKEN, TRACKING_TOKEN, HASH_SECRET, MASTER_KEY, AUDIT_MODEL_API_KEY
+
+kafkaTLS:
+  existingSecret: newapi-risk-gateway-kafka-tls
+
+ingress:
+  enabled: true
+  hosts:
+    - host: risk.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: risk-example-com-tls
+      hosts: [risk.example.com]
+
+serviceMonitor:
+  enabled: true

@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version: '1.27.0'
+          cache: true
+          cache-dependency-path: go.mod
+      - name: Install validation tools
+        run: python3 -m pip install --disable-pip-version-check pyyaml
+      - name: Formatting and static assets
+        run: |
+          test -z "$(gofmt -l .)" || (gofmt -l .; exit 1)
+          for file in scripts/*.sh; do bash -n "$file"; done
+          node --check internal/webui/static/app.js
+          python3 scripts/validate-yaml.py
+      - name: Modules
+        run: go mod download
+      - name: Vet
+        run: go vet ./...
+      - name: Unit and race tests
+        run: go test -race -count=1 -coverprofile=coverage.out ./...
+      - name: Helm lint
+        env:
+          HELM_VERSION: v3.21.4
+        run: |
+          curl -fsSLo /tmp/helm.tgz "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          tar -xzf /tmp/helm.tgz -C /tmp
+          /tmp/linux-amd64/helm lint deploy/helm/newapi-risk-gateway
+
+  docker-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: docker/setup-buildx-action@v4.3.0
+      - uses: docker/build-push-action@v7.3.0
+        with:
+          context: .
+          push: false
+          tags: newapi-risk-gateway:ci
+          build-args: |
+            VERSION=ci
+            COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: End-to-end local infrastructure test
+        run: ./scripts/integration-test.sh
+      - name: Compose logs on failure
+        if: failure()
+        run: docker compose -f compose.test.yml logs --no-color --tail=300

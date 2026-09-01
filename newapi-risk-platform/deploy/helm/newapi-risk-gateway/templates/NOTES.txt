@@ -1,0 +1,9 @@
+1. Check readiness:
+   kubectl -n {{ .Release.Namespace }} get pods -l {{ include "newapi-risk-gateway.selectorLabels" . | replace "\n" "," }}
+
+2. Port-forward the admin UI:
+   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "newapi-risk-gateway.fullname" . }} 8080:{{ .Values.service.port }}
+   Open http://127.0.0.1:8080/admin/
+
+3. Before sending traffic, verify the referenced Secret contains DATABASE_URL,
+   REDIS_URL, KAFKA_BROKERS, ADMIN_TOKEN, TRACKING_TOKEN, HASH_SECRET and MASTER_KEY.
