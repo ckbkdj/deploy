@@ -1,0 +1,48 @@
+name: Bootstrap NewAPI Risk Platform
+
+on:
+  push:
+    branches:
+      - feat/newapi-risk-platform-20260901
+    paths:
+      - .github/workflows/bootstrap-newapi-risk-platform.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bootstrap-newapi-risk-platform-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify and expand source bundle
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(find .github/risk-bootstrap -maxdepth 1 -type f -name 'part*' | wc -l)" -eq 9
+          cat .github/risk-bootstrap/part* | base64 --decode > /tmp/newapi-risk-platform.tar.xz
+          echo "2f5e5a4abcfb237edf20961724d3c8a99354916cb85ce1795e3cec10976cefe4  /tmp/newapi-risk-platform.tar.xz" | sha256sum --check --strict
+          tar -xJf /tmp/newapi-risk-platform.tar.xz -C .
+          test -f newapi-risk-platform/go.mod
+          test -f newapi-risk-platform/README.md
+          rm -rf .github/risk-bootstrap
+
+      - name: Commit expanded source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A newapi-risk-platform .github/risk-bootstrap
+          git diff --cached --check
+          git commit -m "feat: add NewAPI risk control platform"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
